@@ -62,6 +62,85 @@ fatal() { echo ""; rouge "  ✗ $1"; [ $# -gt 1 ] && gris "$2"
           osascript -e "display alert \"Installation interrompue\" message \"$(as_txt "$1")\"" >/dev/null 2>&1
           echo ""; exit 1; }
 
+# ─────────────────────────────────────────────────────────────────────────────
+#  VERIFIER. Tout le reste du script a peche par le meme travers : annoncer un
+#  resultat sans le regarder. Ici on regarde — et on ne teste pas la PRESENCE d'un
+#  fichier mais son FONCTIONNEMENT, parce qu'un fichier vide et executable rend 0.
+#  Appelee deux fois : sur une installation existante, et avant de crier victoire.
+# ─────────────────────────────────────────────────────────────────────────────
+PROBLEMES=0
+SOUCIS=""
+verifier() {                          # $1 = dossier de l'application
+  local A="$1" f o M=0 mq=""
+  PROBLEMES=0; SOUCIS=""
+  souci() { PROBLEMES=$((PROBLEMES+1)); SOUCIS="$SOUCIS
+  · $1"; rouge "  ✗ $1"; }
+
+  if [ -s "$BIN/node" ] && "$BIN/node" --version 2>/dev/null | grep -q '^v[0-9]'
+    then vert "Node $("$BIN/node" --version)"
+    else souci "Node est absent ou inutilisable"; fi
+
+  for o in ffmpeg ffprobe; do
+    if [ -s "$BIN/$o" ] && "$BIN/$o" -version >/dev/null 2>&1
+      then vert "$o"
+      else souci "$o est absent ou inutilisable"; fi
+  done
+
+  if [ -s "$VENV/bin/python" ] && [ "$("$VENV/bin/python" -c 'print(42)' 2>/dev/null)" = "42" ]
+    then vert "Python"
+    else souci "l'environnement Python est cassé"; fi
+
+  if "$VENV/bin/python" -c 'import faster_whisper,anthropic,cv2,av' >/dev/null 2>&1
+    then vert "bibliothèques de transcription"
+    else souci "des bibliothèques manquent (transcription impossible)"; fi
+
+  for f in "$HOME/.cache/huggingface/hub/models--Systran--faster-whisper-medium"/snapshots/*/model.bin; do
+    [ -f "$f" ] && M=$(wc -c < "$f" 2>/dev/null || echo 0)
+  done
+  if [ "$M" -gt 1000000000 ]
+    then vert "modèle de transcription ($((M/1000000)) Mo)"
+    else souci "le modèle de transcription est incomplet ($((M/1000000)) Mo au lieu de ~1500)"; fi
+
+  for f in server.mjs detect.mjs timeline_xml.mjs ctas.py reels_ai.py \
+           transcribe_full.py waveform.py zooms.py public/index.html; do
+    [ -f "$A/$f" ] || mq="$mq $f"
+  done
+  if [ -z "$mq" ]
+    then vert "les 9 fichiers de l'application"
+    else souci "fichiers manquants dans l'application :$mq"; fi
+
+  if [ -s "$A/Lancer Derush Studio.command" ]
+    then vert "lanceur"
+    else souci "le lanceur est absent"; fi
+
+  return 0
+}
+
+# « install.sh --verifier » : on VERIFIE sans rien installer. Le script de verification
+# est ainsi le meme code que celui qui installe — impossible qu'ils divergent.
+if [ "${1:-}" = "--verifier" ]; then
+  CIBLE="$(cat "$HOME/.derush-studio-emplacement" 2>/dev/null)"
+  [ -n "$CIBLE" ] && [ -f "$CIBLE/server.mjs" ] || CIBLE="$HOME/Derush Studio"
+  echo ""
+  printf "\033[1m  VÉRIFICATION DE L'INSTALLATION\033[0m\n"
+  gris "$CIBLE"
+  echo ""
+  verifier "$CIBLE"
+  echo ""
+  if [ "$PROBLEMES" -gt 0 ]; then
+    rouge "  $PROBLEMES point(s) à régler :$SOUCIS"
+    echo ""
+    echo "  Relance la commande d'installation : elle reprend là où ça a échoué."
+    echo ""
+    exit 1
+  fi
+  vert "tout est en ordre"
+  [ -x "$CIBLE/Lancer Derush Studio.command" ] || \
+    gris "pour lancer : bash \"$CIBLE/Lancer Derush Studio.command\""
+  echo ""
+  exit 0
+fi
+
 clear 2>/dev/null
 cat <<'BAN'
 
@@ -237,6 +316,21 @@ if [ -n "$ANCIEN" ]; then
   [ -d "$ANCIEN/data" ] && NMONTAGES=$(ls -1 "$ANCIEN/data" 2>/dev/null | wc -l | tr -d ' ')
   echo "  Une installation existe déjà :"
   gris "$ANCIEN"
+  echo ""
+  echo "  Je la vérifie avant de te proposer quoi que ce soit :"
+  verifier "$ANCIEN"
+  ETAT_ANCIEN=""
+  if [ "$PROBLEMES" -gt 0 ]; then
+    echo ""
+    rouge "  Cette installation a $PROBLEMES problème(s)."
+    gris "« Mettre à jour ici » va essayer de les réparer."
+    ETAT_ANCIEN="
+
+⚠ $PROBLEMES problème(s) détecté(s) — « Mettre à jour ici » tentera de les réparer."
+  else
+    echo ""
+    vert "cette installation est complète"
+  fi
   [ "$NMONTAGES" -gt 0 ] && gris "elle contient le travail de $NMONTAGES rush(s)"
   REP=$(osascript <<AS 2>/dev/null
 try
@@ -244,7 +338,7 @@ try
 
 $ANCIEN
 
-Le travail de $NMONTAGES rush(s) s'y trouve." with title "Derush Studio — installation" buttons {"Annuler","Installer ailleurs","Mettre à jour ici"} default button "Mettre à jour ici"
+Le travail de $NMONTAGES rush(s) s'y trouve.$(as_txt "$ETAT_ANCIEN")" with title "Derush Studio — installation" buttons {"Annuler","Installer ailleurs","Mettre à jour ici"} default button "Mettre à jour ici"
   return button returned of r
 on error
   return ""
@@ -561,6 +655,36 @@ else
 fi
 
 # ---------------------------------------------------------------- terminé
+# On ne crie victoire qu'apres avoir REGARDE. C'est la faute qui a coute plusieurs
+# soirees : « ✓ Node installe », « ✓ mise a jour effectuee », « INSTALLATION TERMINEE »
+# affiches sur une installation vide. Desormais le cadre vert doit se meriter.
+echo ""
+echo "  Vérification finale :"
+verifier "$APP"
+if [ "$PROBLEMES" -gt 0 ]; then
+  echo ""
+  cat <<'RATE'
+  ╭──────────────────────────────────────────────╮
+  │                                              │
+  │          INSTALLATION INCOMPLÈTE             │
+  │                                              │
+  ╰──────────────────────────────────────────────╯
+RATE
+  echo ""
+  echo "  $PROBLEMES point(s) à régler :$SOUCIS"
+  echo ""
+  echo "  QUE FAIRE :"
+  echo "  1. relance exactement la même commande — elle reprend"
+  echo "     là où ça a échoué et ne retélécharge pas le reste"
+  echo "  2. si le même problème revient, envoie cet écran à Tom"
+  echo ""
+  gris "application : $APP"
+  gris "rien de ce qui existait n'a été supprimé"
+  echo ""
+  osascript -e "display alert \"Installation incomplète\" message \"$(as_txt "$PROBLEMES point(s) a regler. Relance la meme commande : elle reprend la ou ca a echoue.")\"" >/dev/null 2>&1
+  exit 1
+fi
+echo ""
 cat <<'FIN'
 
   ╭──────────────────────────────────────────────╮
