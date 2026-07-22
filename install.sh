@@ -145,11 +145,17 @@ fi                                    # fin du mode dépôt
 
 # ---------------------------------------------------------------- 3. emplacement
 etape 3 "Où installer l'application"
-if [ -d "$APP/.git" ]; then
-  gris "installation existante trouvée, elle sera mise à jour"
-else
-  echo "  Une fenêtre te demande de choisir un dossier."
-  CHOIX=$(osascript <<'AS' 2>/dev/null
+
+# On retient l'emplacement choisi : sans ça, impossible de retrouver une installation
+# que l'utilisateur aurait mise ailleurs que dans le dossier proposé par défaut.
+MARQUEUR="$HOME/.derush-studio-emplacement"
+ANCIEN=""
+[ -f "$MARQUEUR" ] && ANCIEN="$(cat "$MARQUEUR" 2>/dev/null)"
+[ -n "$ANCIEN" ] && [ -f "$ANCIEN/server.mjs" ] || ANCIEN=""
+[ -z "$ANCIEN" ] && [ -f "$HOME/Derush Studio/server.mjs" ] && ANCIEN="$HOME/Derush Studio"
+
+choisir_dossier() {                   # ouvre le sélecteur, renvoie le chemin ou rien
+  osascript <<'AS' 2>/dev/null
 try
   set d to choose folder with prompt "Dans quel dossier installer Derush Studio ?" default location (path to home folder)
   return POSIX path of d
@@ -157,7 +163,64 @@ on error
   return ""
 end try
 AS
+}
+
+if [ -n "$ANCIEN" ]; then
+  # Une installation existe déjà. On la MONTRE et on laisse décider — installer par
+  # dessus en silence, c'était le défaut : l'utilisateur ne savait plus où ça allait.
+  NMONTAGES=0
+  [ -d "$ANCIEN/data" ] && NMONTAGES=$(ls -1 "$ANCIEN/data" 2>/dev/null | wc -l | tr -d ' ')
+  echo "  Une installation existe déjà :"
+  gris "$ANCIEN"
+  [ "$NMONTAGES" -gt 0 ] && gris "elle contient le travail de $NMONTAGES rush(s)"
+  REP=$(osascript <<AS 2>/dev/null
+try
+  set r to display dialog "Derush Studio est déjà installé ici :
+
+$ANCIEN
+
+Le travail de $NMONTAGES rush(s) s'y trouve." with title "Derush Studio — installation" buttons {"Annuler","Installer ailleurs","Mettre à jour ici"} default button "Mettre à jour ici"
+  return button returned of r
+on error
+  return ""
+end try
+AS
 )
+  case "$REP" in
+    "Mettre à jour ici")
+      APP="$ANCIEN"; vert "mise à jour sur place — ton travail est conservé" ;;
+    "Installer ailleurs")
+      CHOIX=$(choisir_dossier)
+      [ -n "$CHOIX" ] || fatal "Installation annulée : aucun dossier choisi." \
+        "Relance la commande et choisis un dossier."
+      APP="${CHOIX%/}/Derush Studio"
+      [ "$APP" = "$ANCIEN" ] && fatal "C'est le dossier de l'installation existante." \
+        "Choisis un autre dossier, ou relance et prends « Mettre à jour ici »."
+      # Supprimer l'ancienne emporterait les montages : on le dit, et on ne le
+      # propose qu'explicitement, jamais par défaut.
+      SUPPR=$(osascript <<AS 2>/dev/null
+try
+  set r to display dialog "Que faire de l'ancienne installation ?
+
+$ANCIEN
+
+Elle contient le travail de $NMONTAGES rush(s). La supprimer effacera ces montages définitivement." with title "Ancienne installation" buttons {"La garder","La supprimer"} default button "La garder"
+  return button returned of r
+on error
+  return "La garder"
+end try
+AS
+)
+      if [ "$SUPPR" = "La supprimer" ]; then
+        rm -rf "$ANCIEN" && vert "ancienne installation supprimée"
+      else
+        gris "ancienne installation conservée : $ANCIEN"
+      fi ;;
+    *) fatal "Installation annulée." "Rien n'a été modifié." ;;
+  esac
+else
+  echo "  Une fenêtre te demande de choisir un dossier."
+  CHOIX=$(choisir_dossier)
   # « Annuler » ANNULE. Retomber en silence sur un emplacement par défaut laissait
   # l'utilisateur sans savoir où ses fichiers ont atterri — c'est le contraire de ce
   # qu'on lui promet en lui demandant de choisir.
@@ -165,6 +228,7 @@ AS
     "Relance la commande et choisis un dossier."
   APP="${CHOIX%/}/Derush Studio"
 fi
+printf '%s' "$APP" > "$MARQUEUR"      # on saura le retrouver au prochain lancement
 mkdir -p "$APP" 2>/dev/null || fatal "Impossible d'écrire dans « $APP »." \
   "Choisis un dossier de ton dossier personnel."
 vert "$APP"
@@ -266,6 +330,26 @@ elif [ -d "$APP/.git" ]; then
   git -C "$APP" fetch --quiet origin && git -C "$APP" reset --hard --quiet origin/main
   chmod 600 "$APP/.git/config"
   vert "mise à jour effectuée"
+elif [ -f "$APP/server.mjs" ]; then
+  # Installation venue du ZIP : pas de dépôt git, mais du CODE et surtout des MONTAGES.
+  # On récupère la nouvelle version à côté, puis on remplace les fichiers de code
+  # un par un — data/, settings.json et la clé API ne sont jamais touchés.
+  gris "installation existante sans dépôt — mise à jour du code seul…"
+  TMPG=$(mktemp -d)
+  git clone --quiet --depth 1 "https://$JETON@github.com/$DEPOT.git" "$TMPG/depot" \
+    || fatal "Téléchargement de l'application impossible."
+  rm -rf "$APP/.git"; mv "$TMPG/depot/.git" "$APP/.git"   # le dépôt reprend la main
+  for f in server.mjs detect.mjs timeline_xml.mjs install.sh \
+           ctas.py reels_ai.py transcribe_full.py waveform.py zooms.py; do
+    [ -f "$TMPG/depot/$f" ] && cp "$TMPG/depot/$f" "$APP/"
+  done
+  mkdir -p "$APP/public" "$APP/models"
+  cp -R "$TMPG/depot/public/." "$APP/public/" 2>/dev/null
+  cp -R "$TMPG/depot/models/." "$APP/models/" 2>/dev/null
+  rm -rf "$TMPG"
+  git -C "$APP" reset --hard --quiet origin/main 2>/dev/null || true
+  chmod 600 "$APP/.git/config"
+  vert "mise à jour effectuée — tes montages sont intacts"
 else
   # On n'efface JAMAIS un dossier qui contient déjà des choses.
   [ -z "$(ls -A "$APP" 2>/dev/null)" ] || fatal "« $APP » n'est pas vide." \
