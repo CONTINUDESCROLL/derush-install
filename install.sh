@@ -15,6 +15,13 @@
 # =============================================================================
 set -u
 
+# Si GitHub refuse le jeton, git reclame un identifiant sur le terminal. Lance par
+# « curl | bash », l'entree standard est occupee : le script se figeait POUR TOUJOURS
+# sur « Password for 'https://ghp_xxx@github.com' » — en affichant le jeton en clair.
+# Avec ceci, git echoue franchement et notre propre message s'affiche.
+export GIT_TERMINAL_PROMPT=0
+export GIT_ASKPASS=/usr/bin/true
+
 DEPOT="CONTINUDESCROLL/derush-studio"
 APP="$HOME/Derush Studio"          # proposé par défaut, l'utilisateur peut choisir
 BIN="$HOME/.local/bin"
@@ -246,21 +253,29 @@ telecharger() {                       # <url> <destination> — la source d'ffmp
 etape 4 "Outils vidéo et Node"
 mkdir -p "$BIN"
 
-if [ -x "$BIN/node" ]; then
+# On teste que node DEMARRE, pas qu'un fichier du meme nom existe : un binaire tronque
+# par un telechargement coupe est executable, et « [ -x ] » l'adoptait a vie. Toutes les
+# relances suivantes affichaient « Node deja present () » — parentheses vides — puis
+# « INSTALLATION TERMINEE », et l'application ne demarrait jamais.
+noeud_ok(){ [ -s "$BIN/node" ] && "$BIN/node" --version 2>/dev/null | grep -q '^v[0-9]'; }
+if noeud_ok; then
   gris "Node déjà présent ($("$BIN/node" --version))"
 else
   gris "téléchargement de Node… (~30 Mo, moins d'une minute)"
   T=$(mktemp -d)
   telecharger "https://nodejs.org/dist/$NODE_V/node-$NODE_V-$NODE_ARCH.tar.gz" "$T/n.tgz" \
     || fatal "Téléchargement de Node impossible." "Vérifie ta connexion internet."
-  tar -xzf "$T/n.tgz" -C "$T"
-  cp "$T"/node-*/bin/node "$BIN/node" && chmod +x "$BIN/node"
+  tar -xzf "$T/n.tgz" -C "$T" 2>/dev/null \
+    || fatal "L'archive de Node est illisible." "Le téléchargement a été coupé ; relance la commande."
+  cp "$T"/node-*/bin/node "$BIN/node" 2>/dev/null && chmod +x "$BIN/node" 2>/dev/null
   rm -rf "$T"
-  vert "Node installé"
+  # rien n'est annonce avant d'avoir la preuve : on LANCE le binaire.
+  noeud_ok || fatal "Node n'a pas pu être installé." "Relance la commande."
+  vert "Node installé ($("$BIN/node" --version))"
 fi
 
 for outil in ffmpeg ffprobe; do
-  if [ -x "$BIN/$outil" ]; then
+  if [ -s "$BIN/$outil" ] && "$BIN/$outil" -version >/dev/null 2>&1; then
     gris "$outil déjà présent"
   else
     gris "téléchargement de ${outil}… (~60 Mo)"
@@ -271,7 +286,8 @@ for outil in ffmpeg ffprobe; do
     f=$(find "$T" -name "$outil" -type f | head -1)
     [ -n "$f" ] && cp "$f" "$BIN/$outil" && chmod +x "$BIN/$outil"
     rm -rf "$T"
-    [ -x "$BIN/$outil" ] || fatal "$outil n'a pas pu être installé."
+    { [ -s "$BIN/$outil" ] && "$BIN/$outil" -version >/dev/null 2>&1; } \
+      || fatal "$outil n'a pas pu être installé." "Le téléchargement était incomplet ; relance la commande."
     vert "$outil installé"
   fi
 done
@@ -327,9 +343,16 @@ if [ "$MODE" = "local" ]; then
   vert "application installée"
 elif [ -d "$APP/.git" ]; then
   git -C "$APP" remote set-url origin "https://$JETON@github.com/$DEPOT.git"
-  git -C "$APP" fetch --quiet origin && git -C "$APP" reset --hard --quiet origin/main
-  chmod 600 "$APP/.git/config"
-  vert "mise à jour effectuée"
+  # Le && avalait l'echec : hors ligne ou jeton revoque, on affichait quand meme
+  # « mise a jour effectuee » et le monteur repartait sur l'ancienne version.
+  if git -C "$APP" fetch --quiet origin && git -C "$APP" reset --hard --quiet origin/main; then
+    chmod 600 "$APP/.git/config"
+    vert "mise à jour effectuée"
+  else
+    chmod 600 "$APP/.git/config"
+    fatal "La mise à jour n'a pas pu être récupérée." \
+      "Vérifie ta connexion, ou demande un nouveau jeton à Tom. L'application existante n'a pas été modifiée."
+  fi
 elif [ -f "$APP/server.mjs" ]; then
   # Installation venue du ZIP : pas de dépôt git, mais du CODE et surtout des MONTAGES.
   # On récupère la nouvelle version à côté, puis on remplace les fichiers de code
@@ -352,7 +375,11 @@ elif [ -f "$APP/server.mjs" ]; then
   vert "mise à jour effectuée — tes montages sont intacts"
 else
   # On n'efface JAMAIS un dossier qui contient déjà des choses.
-  [ -z "$(ls -A "$APP" 2>/dev/null)" ] || fatal "« $APP » n'est pas vide." \
+  # Le Finder seme des .DS_Store et, sur les volumes externes, des fichiers « ._ ».
+  # Un dossier VIDE A L'ECRAN etait donc refuse, et le monteur n'avait aucun moyen
+  # de comprendre pourquoi. Ces fichiers-la ne comptent pas.
+  RESTE=$(ls -A "$APP" 2>/dev/null | grep -v -e '^\.DS_Store$' -e '^\._' -e '^\.Spotlight-' -e '^\.Trashes$' -e '^\.fseventsd$' || true)
+  [ -z "$RESTE" ] || fatal "« $APP » n'est pas vide." \
     "Relance l'installation et choisis un autre dossier."
   gris "téléchargement de l'application…"
   git clone --quiet --depth 1 "https://$JETON@github.com/$DEPOT.git" "$APP" \
@@ -384,10 +411,13 @@ if [ -z "$RUSH" ] || [ ! -f "$RUSH" ]; then
 fi
 printf '%s' "$RUSH" > .dernier_rush
 
-# motif LARGE : apres un redemarrage demande depuis l'interface, le processus porte
-# le chemin absolu de server.mjs — « node server.mjs » ne l'aurait pas trouve.
-pkill -f "server\.mjs" 2>/dev/null
+# On ne tue QUE notre serveur. Un « pkill -f server.mjs » nu emportait aussi les
+# projets Node du monteur qui portaient le meme nom de fichier — travail perdu.
+[ -f .serveur.pid ] && kill "$(cat .serveur.pid)" 2>/dev/null
+pkill -f "$PWD/server\.mjs" 2>/dev/null      # cas du redemarrage lance depuis l'interface
+sleep 0.3
 node server.mjs "$RUSH" &
+printf '%s' "$!" > .serveur.pid
 sleep 2
 open "http://localhost:4300"
 echo ""
