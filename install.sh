@@ -123,7 +123,10 @@ while true; do
     JETON=$(demander_jeton "$ERREUR")
     [ -n "$JETON" ] || fatal "Installation annulée." "Relance la commande quand tu auras le jeton."
   fi
-  gris "vérification…"
+  # Un copier-coller ramene souvent une espace ou un retour a la ligne invisible,
+  # et GitHub refuse alors un jeton pourtant correct. On nettoie avant de tester.
+  JETON=$(printf '%s' "$JETON" | tr -d '[:space:]')
+  gris "vérification… (jeton de ${#JETON} caractères)"
   CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 20 \
          -H "Authorization: Bearer $JETON" "https://api.github.com/repos/$DEPOT")
   case "$CODE" in
@@ -155,7 +158,12 @@ on error
 end try
 AS
 )
-  [ -n "$CHOIX" ] && APP="${CHOIX%/}/Derush Studio" || gris "aucun choix — emplacement par défaut"
+  # « Annuler » ANNULE. Retomber en silence sur un emplacement par défaut laissait
+  # l'utilisateur sans savoir où ses fichiers ont atterri — c'est le contraire de ce
+  # qu'on lui promet en lui demandant de choisir.
+  [ -n "$CHOIX" ] || fatal "Installation annulée : aucun dossier choisi." \
+    "Relance la commande et choisis un dossier."
+  APP="${CHOIX%/}/Derush Studio"
 fi
 mkdir -p "$APP" 2>/dev/null || fatal "Impossible d'écrire dans « $APP »." \
   "Choisis un dossier de ton dossier personnel."
