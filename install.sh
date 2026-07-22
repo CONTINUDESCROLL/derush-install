@@ -395,7 +395,13 @@ echo "Derush Studio est lancé dans ton navigateur."
 echo "Ferme cette fenêtre pour arrêter l'application."
 wait
 LANCEUR
-chmod +x "$APP/Lancer Derush Studio.command"
+chmod +x "$APP/Lancer Derush Studio.command" 2>/dev/null
+# On NE SUPPOSE PAS que le chmod a pris. Sur un volume exFAT/FAT (disque externe), les
+# droits Unix n'existent pas et tout est deja executable ; sur un partage reseau, ils
+# peuvent au contraire etre refuses. Ce n'est bloquant ni dans un cas ni dans l'autre —
+# le raccourci appelle le lanceur PAR bash — mais on veut le SAVOIR, pour donner a la
+# fin une consigne qui marche vraiment au lieu d'un double-clic qui echouera.
+if [ -x "$APP/Lancer Derush Studio.command" ]; then LANCEUR_EXEC=oui; else LANCEUR_EXEC=non; fi
 # Un LIEN SYMBOLIQUE .command ne se lance pas au double-clic : le Finder regarde les
 # droits du lien, qui n'en a pas. On écrit donc un VRAI petit fichier qui appelle le
 # lanceur. Et macOS peut refuser l'accès au Bureau : on vérifie, sans faire échouer
@@ -433,11 +439,18 @@ if [ -n "$RACCOURCI" ]; then
   echo "  Double-clique dessus pour lancer l'application :"
   echo "  elle s'ouvrira toute seule dans ton navigateur."
   MSG="Un raccourci a ete place dans ton $RACCOURCI. Double-clique dessus pour lancer lapplication."
-else
+elif [ "$LANCEUR_EXEC" = oui ]; then
   echo "  Pour lancer l'application, ouvre ce dossier :"
   echo "    $APP"
   echo "  et double-clique sur « Lancer Derush Studio.command »."
   MSG="Ouvre le dossier de linstallation et double-clique sur Lancer Derush Studio.command"
+else
+  # Ni raccourci, ni bit d'execution : on ne renvoie pas le monteur vers un double-clic
+  # qui lui repondra « Permission denied ». Cette commande-la marche partout.
+  echo "  Pour lancer l'application, colle cette ligne dans le Terminal :"
+  echo ""
+  echo "    bash \"$APP/Lancer Derush Studio.command\""
+  MSG="Colle dans le Terminal la commande affichee dans la fenetre pour lancer lapplication."
 fi
 cat <<'FIN2'
 
@@ -447,5 +460,9 @@ cat <<'FIN2'
 FIN2
 gris "application : $APP"
 gris "mises à jour : bouton ⚙ en haut à droite de l'application"
+# Filet de securite affiche DANS TOUS LES CAS : quel que soit le systeme de fichiers,
+# le raccourci, ou les droits, cette commande lance l'application. Elle n'a besoin
+# d'aucun bit d'execution, seulement du droit de lire le fichier.
+gris "si rien ne se lance : bash \"$APP/Lancer Derush Studio.command\""
 echo ""
 osascript -e "display alert \"Derush Studio est installe\" message \"$MSG\" buttons {\"Parfait\"}" >/dev/null 2>&1
