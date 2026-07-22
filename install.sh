@@ -263,7 +263,7 @@ for outil in ffmpeg ffprobe; do
   if [ -x "$BIN/$outil" ]; then
     gris "$outil déjà présent"
   else
-    gris "téléchargement de $outil… (~60 Mo)"
+    gris "téléchargement de ${outil}… (~60 Mo)"
     T=$(mktemp -d)
     telecharger "https://ffmpeg.martin-riedl.de/redirect/latest/macos/$FF_ARCH/release/$outil.zip" "$T/o.zip" \
       || fatal "Téléchargement de $outil impossible." "La source est parfois indisponible ; réessaie dans quelques minutes."
