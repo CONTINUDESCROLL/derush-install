@@ -395,18 +395,6 @@ echo "Derush Studio est lancé dans ton navigateur."
 echo "Ferme cette fenêtre pour arrêter l'application."
 wait
 LANCEUR
-#!/bin/bash
-cd "\$(dirname "\$0")"
-export PATH="$BIN:\$PATH"
-pkill -f "node server.mjs" 2>/dev/null
-"$BIN/node" server.mjs "\$@" &
-sleep 2
-open "http://localhost:4300"
-echo ""
-echo "Derush Studio est lancé dans ton navigateur."
-echo "Ferme cette fenêtre pour arrêter l'application."
-wait
-EOF
 chmod +x "$APP/Lancer Derush Studio.command"
 # Un LIEN SYMBOLIQUE .command ne se lance pas au double-clic : le Finder regarde les
 # droits du lien, qui n'en a pas. On écrit donc un VRAI petit fichier qui appelle le
@@ -415,7 +403,9 @@ chmod +x "$APP/Lancer Derush Studio.command"
 RACCOURCI=""
 raccourci_vers() {                    # $1 = dossier cible
   [ -d "$1" ] || return 1
-  { printf '#!/bin/bash\nexec "%s/Lancer Derush Studio.command"\n' "$APP" > "$1/Derush Studio.command"; } 2>/dev/null || return 1
+  # on appelle le lanceur PAR bash, pas en exec direct : si son bit d'exécution
+  # saute (copie, mise à jour, volume externe en exFAT), le raccourci marche quand même.
+  { printf '#!/bin/bash\nexec /bin/bash "%s/Lancer Derush Studio.command"\n' "$APP" > "$1/Derush Studio.command"; } 2>/dev/null || return 1
   chmod +x "$1/Derush Studio.command" 2>/dev/null || return 1
   [ -x "$1/Derush Studio.command" ]
 }
