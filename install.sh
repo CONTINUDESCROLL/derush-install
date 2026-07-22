@@ -408,15 +408,24 @@ echo "Ferme cette fenêtre pour arrêter l'application."
 wait
 EOF
 chmod +x "$APP/Lancer Derush Studio.command"
-# macOS peut refuser l'accès au Bureau (autorisation « Fichiers et dossiers »).
-# On ne fait pas échouer l'installation pour ça : on dit simplement où est le lanceur.
+# Un LIEN SYMBOLIQUE .command ne se lance pas au double-clic : le Finder regarde les
+# droits du lien, qui n'en a pas. On écrit donc un VRAI petit fichier qui appelle le
+# lanceur. Et macOS peut refuser l'accès au Bureau : on vérifie, sans faire échouer
+# l'installation pour autant.
 RACCOURCI=""
-if ln -sf "$APP/Lancer Derush Studio.command" "$HOME/Desktop/Derush Studio.command" 2>/dev/null \
-   && [ -e "$HOME/Desktop/Derush Studio.command" ]; then
-  RACCOURCI="oui"; vert "raccourci créé sur le Bureau"
+raccourci_vers() {                    # $1 = dossier cible
+  [ -d "$1" ] || return 1
+  { printf '#!/bin/bash\nexec "%s/Lancer Derush Studio.command"\n' "$APP" > "$1/Derush Studio.command"; } 2>/dev/null || return 1
+  chmod +x "$1/Derush Studio.command" 2>/dev/null || return 1
+  [ -x "$1/Derush Studio.command" ]
+}
+if raccourci_vers "$HOME/Desktop"; then
+  RACCOURCI="Bureau"; vert "raccourci créé sur le Bureau"
+elif mkdir -p "$HOME/Applications" 2>/dev/null && raccourci_vers "$HOME/Applications"; then
+  RACCOURCI="Applications"; vert "raccourci créé dans ton dossier Applications"
+  gris "(macOS a refusé l'accès au Bureau)"
 else
-  gris "raccourci sur le Bureau impossible (autorisation refusée) —"
-  gris "le lanceur reste dans le dossier de l'application"
+  gris "raccourci impossible à créer — le lanceur reste dans le dossier de l'application"
 fi
 
 # ---------------------------------------------------------------- terminé
@@ -430,10 +439,10 @@ cat <<'FIN'
 
 FIN
 if [ -n "$RACCOURCI" ]; then
-  echo "  Un raccourci « Derush Studio » est sur ton Bureau."
+  echo "  Un raccourci « Derush Studio » est dans ton $RACCOURCI."
   echo "  Double-clique dessus pour lancer l'application :"
   echo "  elle s'ouvrira toute seule dans ton navigateur."
-  MSG="Un raccourci a ete place sur ton Bureau. Double-clique dessus pour lancer lapplication."
+  MSG="Un raccourci a ete place dans ton $RACCOURCI. Double-clique dessus pour lancer lapplication."
 else
   echo "  Pour lancer l'application, ouvre ce dossier :"
   echo "    $APP"
