@@ -588,9 +588,9 @@ fi
 
 cat > "$APP/Lancer Derush Studio.command" <<'LANCEUR'
 #!/bin/bash
-# Un double-clic dans le Finder ne passe AUCUN argument, or le serveur exige un rush :
-# sans ça il s'arrêtait aussitôt et le navigateur affichait « impossible de se
-# connecter ». On retient donc le dernier rush ouvert, et on le demande la 1re fois.
+# L'application démarre SANS rush (18/10/2026) : on importe ou on ouvre un rush depuis
+# l'étape Import. Si le dernier rush ouvert existe encore, on le rouvre pour reprendre
+# là où on en était ; sinon on démarre vide, sans rien demander.
 CIBLE="$0"
 while [ -L "$CIBLE" ]; do CIBLE="$(readlink "$CIBLE")"; done   # raccourci du Bureau
 cd "$(dirname "$CIBLE")" || exit 1
@@ -598,23 +598,14 @@ export PATH="$HOME/.local/bin:$PATH"
 
 RUSH="${1:-}"
 [ -z "$RUSH" ] && [ -f .dernier_rush ] && RUSH="$(cat .dernier_rush)"
-if [ -z "$RUSH" ] || [ ! -f "$RUSH" ]; then
-  RUSH=$(osascript -e 'try' \
-    -e 'POSIX path of (choose file with prompt "Choisis un rush à ouvrir" of type {"mp4","mov","m4v","MP4","MOV","M4V"})' \
-    -e 'on error' -e 'return ""' -e 'end try')
-fi
-if [ -z "$RUSH" ] || [ ! -f "$RUSH" ]; then
-  echo "Aucun rush choisi — rien à ouvrir."
-  exit 0
-fi
-printf '%s' "$RUSH" > .dernier_rush
+[ -n "$RUSH" ] && [ ! -f "$RUSH" ] && RUSH=""
 
 # On ne tue QUE notre serveur. Un « pkill -f server.mjs » nu emportait aussi les
 # projets Node du monteur qui portaient le meme nom de fichier — travail perdu.
 [ -f .serveur.pid ] && kill "$(cat .serveur.pid)" 2>/dev/null
 pkill -f "$PWD/server\.mjs" 2>/dev/null      # cas du redemarrage lance depuis l'interface
 sleep 0.3
-node server.mjs "$RUSH" &
+node server.mjs ${RUSH:+"$RUSH"} &
 printf '%s' "$!" > .serveur.pid
 sleep 2
 open "http://localhost:4300"
