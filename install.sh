@@ -1,6 +1,8 @@
 #!/bin/bash
 # =============================================================================
-#  DERUSH STUDIO — installation sur un Mac
+#  NMA EXTRACTOR (ex-Derush Studio) — installation sur un Mac
+#  Le dossier et le lanceur gardent le nom « Derush Studio » : les installations
+#  existantes sont reconnues et mises à jour sans rien déplacer.
 #
 #  Ce script est PUBLIC et ne contient aucun secret : c'est lui qui demande le
 #  jeton d'accès. La commande d'installation est donc la même pour tout le monde.
@@ -223,7 +225,7 @@ demander_jeton() {                    # $1 = message d'erreur du tour précéden
 $msg"
   osascript <<AS 2>/dev/null
 try
-  set r to display dialog "$(as_txt "$msg")" with title "Derush Studio — installation" default answer "" with hidden answer buttons {"Annuler","Continuer"} default button "Continuer"
+  set r to display dialog "$(as_txt "$msg")" with title "NMA Extractor — installation" default answer "" with hidden answer buttons {"Annuler","Continuer"} default button "Continuer"
   return text returned of r
 on error
   return "@@ANNULE@@"
@@ -301,7 +303,7 @@ fi
 choisir_dossier() {                   # ouvre le sélecteur, renvoie le chemin ou rien
   osascript <<'AS' 2>/dev/null
 try
-  set d to choose folder with prompt "Dans quel dossier installer Derush Studio ?" default location (path to home folder)
+  set d to choose folder with prompt "Dans quel dossier installer NMA Extractor ?" default location (path to home folder)
   return POSIX path of d
 on error
   return ""
@@ -334,11 +336,11 @@ if [ -n "$ANCIEN" ]; then
   [ "$NMONTAGES" -gt 0 ] && gris "elle contient le travail de $NMONTAGES rush(s)"
   REP=$(osascript <<AS 2>/dev/null
 try
-  set r to display dialog "Derush Studio est déjà installé ici :
+  set r to display dialog "NMA Extractor est déjà installé ici :
 
 $ANCIEN
 
-Le travail de $NMONTAGES rush(s) s'y trouve.$(as_txt "$ETAT_ANCIEN")" with title "Derush Studio — installation" buttons {"Annuler","Installer ailleurs","Mettre à jour ici"} default button "Mettre à jour ici"
+Le travail de $NMONTAGES rush(s) s'y trouve.$(as_txt "$ETAT_ANCIEN")" with title "NMA Extractor — installation" buttons {"Annuler","Installer ailleurs","Mettre à jour ici"} default button "Mettre à jour ici"
   return button returned of r
 on error
   return ""
@@ -617,7 +619,7 @@ printf '%s' "$!" > .serveur.pid
 sleep 2
 open "http://localhost:4300"
 echo ""
-echo "Derush Studio est lancé dans ton navigateur."
+echo "NMA Extractor est lancé dans ton navigateur."
 echo "Ferme cette fenêtre pour arrêter l'application."
 wait
 LANCEUR
@@ -641,12 +643,13 @@ raccourci_vers() {                    # $1 = dossier cible
   [ -d "$1" ] || return 1
   # on appelle le lanceur PAR bash, pas en exec direct : si son bit d'exécution
   # saute (copie, mise à jour, volume externe en exFAT), le raccourci marche quand même.
-  { printf '#!/bin/bash\nexec /bin/bash "%s/Lancer Derush Studio.command"\n' "$APP" > "$1/Derush Studio.command"; } 2>/dev/null || return 1
-  chmod +x "$1/Derush Studio.command" 2>/dev/null || return 1
+  rm -f "$1/Derush Studio.command" 2>/dev/null       # ancien nom du raccourci (avant le 18/10/2026)
+  { printf '#!/bin/bash\nexec /bin/bash "%s/Lancer Derush Studio.command"\n' "$APP" > "$1/NMA Extractor.command"; } 2>/dev/null || return 1
+  chmod +x "$1/NMA Extractor.command" 2>/dev/null || return 1
   # le logo de l'application sur le raccourci (icône Finder ; sans effet sur le lancement)
-  [ -f "$APP/public/icone/Derush-Studio.icns" ] && ICONE="$APP/public/icone/Derush-Studio.icns" RACC="$1/Derush Studio.command" \
+  [ -f "$APP/public/icone/Derush-Studio.icns" ] && ICONE="$APP/public/icone/Derush-Studio.icns" RACC="$1/NMA Extractor.command" \
     osascript -l JavaScript -e 'ObjC.import("AppKit"); ObjC.import("stdlib"); $.NSWorkspace.sharedWorkspace.setIconForFileOptions($.NSImage.alloc.initWithContentsOfFile($.getenv("ICONE")), $.getenv("RACC"), 0)' >/dev/null 2>&1
-  [ -x "$1/Derush Studio.command" ]
+  [ -x "$1/NMA Extractor.command" ]
 }
 if raccourci_vers "$HOME/Desktop"; then
   RACCOURCI="Bureau"; vert "raccourci créé sur le Bureau"
@@ -698,7 +701,7 @@ cat <<'FIN'
 
 FIN
 if [ -n "$RACCOURCI" ]; then
-  echo "  Un raccourci « Derush Studio » est dans ton $RACCOURCI."
+  echo "  Un raccourci « NMA Extractor » est dans ton $RACCOURCI."
   echo "  Double-clique dessus pour lancer l'application :"
   echo "  elle s'ouvrira toute seule dans ton navigateur."
   MSG="Un raccourci a ete place dans ton $RACCOURCI. Double-clique dessus pour lancer lapplication."
@@ -737,4 +740,4 @@ gris "mises à jour : bouton ⚙ en haut à droite de l'application"
 # d'aucun bit d'execution, seulement du droit de lire le fichier.
 gris "si rien ne se lance : bash \"$APP/Lancer Derush Studio.command\""
 echo ""
-osascript -e "display alert \"Derush Studio est installe\" message \"$MSG\" buttons {\"Parfait\"}" >/dev/null 2>&1
+osascript -e "display alert \"NMA Extractor est installe\" message \"$MSG\" buttons {\"Parfait\"}" >/dev/null 2>&1
