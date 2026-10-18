@@ -643,6 +643,9 @@ raccourci_vers() {                    # $1 = dossier cible
   # saute (copie, mise à jour, volume externe en exFAT), le raccourci marche quand même.
   { printf '#!/bin/bash\nexec /bin/bash "%s/Lancer Derush Studio.command"\n' "$APP" > "$1/Derush Studio.command"; } 2>/dev/null || return 1
   chmod +x "$1/Derush Studio.command" 2>/dev/null || return 1
+  # le logo de l'application sur le raccourci (icône Finder ; sans effet sur le lancement)
+  [ -f "$APP/public/icone/Derush-Studio.icns" ] && ICONE="$APP/public/icone/Derush-Studio.icns" RACC="$1/Derush Studio.command" \
+    osascript -l JavaScript -e 'ObjC.import("AppKit"); ObjC.import("stdlib"); $.NSWorkspace.sharedWorkspace.setIconForFileOptions($.NSImage.alloc.initWithContentsOfFile($.getenv("ICONE")), $.getenv("RACC"), 0)' >/dev/null 2>&1
   [ -x "$1/Derush Studio.command" ]
 }
 if raccourci_vers "$HOME/Desktop"; then
