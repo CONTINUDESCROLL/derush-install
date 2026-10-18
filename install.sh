@@ -643,10 +643,15 @@ raccourci_vers() {                    # $1 = dossier cible
   [ -d "$1" ] || return 1
   # on appelle le lanceur PAR bash, pas en exec direct : si son bit d'exécution
   # saute (copie, mise à jour, volume externe en exFAT), le raccourci marche quand même.
-  rm -f "$1/Derush Studio.command" 2>/dev/null       # ancien nom du raccourci (avant le 18/10/2026)
+  rm -rf "$1/Derush Studio.command" "$1/NMA Extractor.command" "$1/NMA Extractor.app" 2>/dev/null   # anciens raccourcis
+  # une vraie application (comme NMA Auditor et NMA Editor) : elle ouvre le lanceur dans le Terminal, avec le logo
+  local S; S=$(mktemp); printf 'do shell script "open -a Terminal " & quoted form of "%s/Lancer Derush Studio.command"\n' "$APP" > "$S"
+  if osacompile -o "$1/NMA Extractor.app" "$S" >/dev/null 2>&1; then rm -f "$S"
+    if [ -f "$APP/public/icone/Derush-Studio.icns" ]; then cp "$APP/public/icone/Derush-Studio.icns" "$1/NMA Extractor.app/Contents/Resources/applet.icns" 2>/dev/null && codesign --force --sign - "$1/NMA Extractor.app" >/dev/null 2>&1; touch "$1/NMA Extractor.app"; fi
+    return 0; fi; rm -f "$S"
+  # à défaut, un .command (on appelle le lanceur PAR bash : si son bit d'exécution saute, ça marche quand même)
   { printf '#!/bin/bash\nexec /bin/bash "%s/Lancer Derush Studio.command"\n' "$APP" > "$1/NMA Extractor.command"; } 2>/dev/null || return 1
   chmod +x "$1/NMA Extractor.command" 2>/dev/null || return 1
-  # le logo de l'application sur le raccourci (icône Finder ; sans effet sur le lancement)
   [ -f "$APP/public/icone/Derush-Studio.icns" ] && ICONE="$APP/public/icone/Derush-Studio.icns" RACC="$1/NMA Extractor.command" \
     osascript -l JavaScript -e 'ObjC.import("AppKit"); ObjC.import("stdlib"); $.NSWorkspace.sharedWorkspace.setIconForFileOptions($.NSImage.alloc.initWithContentsOfFile($.getenv("ICONE")), $.getenv("RACC"), 0)' >/dev/null 2>&1
   [ -x "$1/NMA Extractor.command" ]
