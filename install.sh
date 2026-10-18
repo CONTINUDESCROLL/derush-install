@@ -588,31 +588,34 @@ fi
 
 cat > "$APP/Lancer Derush Studio.command" <<'LANCEUR'
 #!/bin/bash
-# L'application démarre SANS rush (18/10/2026) : on importe ou on ouvre un rush depuis
-# l'étape Import. Si le dernier rush ouvert existe encore, on le rouvre pour reprendre
-# là où on en était ; sinon on démarre vide, sans rien demander.
+# NMA Extractor se lance comme NMA Auditor et NMA Editor (18/10/2026) : le serveur tourne en
+# arrière-plan, l'application s'ouvre dans le navigateur, sans fenêtre du Terminal.
+# Elle démarre SANS rush : on importe ou on ouvre un rush depuis l'étape Import. Si le
+# dernier rush ouvert existe encore, on le rouvre pour reprendre là où on en était.
 CIBLE="$0"
 while [ -L "$CIBLE" ]; do CIBLE="$(readlink "$CIBLE")"; done   # raccourci du Bureau
 cd "$(dirname "$CIBLE")" || exit 1
 export PATH="$HOME/.local/bin:$PATH"
+NODE="$HOME/.local/opt/node22/bin/node"; [ -x "$NODE" ] || NODE="$HOME/.local/bin/node"; [ -x "$NODE" ] || NODE="$(command -v node)"
+
+# Déjà lancée : on ouvre juste le navigateur (relancer couperait une analyse en cours).
+if curl -s -m 2 -o /dev/null http://localhost:4300/api/progress; then
+  open "http://localhost:4300"; exit 0
+fi
 
 RUSH="${1:-}"
 [ -z "$RUSH" ] && [ -f .dernier_rush ] && RUSH="$(cat .dernier_rush)"
 [ -n "$RUSH" ] && [ ! -f "$RUSH" ] && RUSH=""
 
-# On ne tue QUE notre serveur. Un « pkill -f server.mjs » nu emportait aussi les
-# projets Node du monteur qui portaient le meme nom de fichier — travail perdu.
+# On ne tue QUE notre serveur (un « pkill -f server.mjs » nu emportait aussi NMA Auditor,
+# NMA Editor et NMA Duplicator), au cas où il serait figé sans répondre.
 [ -f .serveur.pid ] && kill "$(cat .serveur.pid)" 2>/dev/null
-pkill -f "$PWD/server\.mjs" 2>/dev/null      # cas du redemarrage lance depuis l'interface
+pkill -f "$PWD/server\.mjs" 2>/dev/null
 sleep 0.3
-node server.mjs ${RUSH:+"$RUSH"} &
+nohup "$NODE" server.mjs ${RUSH:+"$RUSH"} >> srv.log 2>&1 &
 printf '%s' "$!" > .serveur.pid
-sleep 2
+for i in 1 2 3 4 5 6 7 8 9 10; do curl -s -m 1 -o /dev/null http://localhost:4300/api/progress && break; sleep 0.5; done
 open "http://localhost:4300"
-echo ""
-echo "NMA Extractor est lancé dans ton navigateur."
-echo "Ferme cette fenêtre pour arrêter l'application."
-wait
 LANCEUR
 # Le heredoc peut echouer (disque plein, dossier devenu non inscriptible) sans que rien
 # ne le signale : on annoncait « raccourci cree » et le double-clic tombait dans le vide.
@@ -635,8 +638,8 @@ raccourci_vers() {                    # $1 = dossier cible
   # on appelle le lanceur PAR bash, pas en exec direct : si son bit d'exécution
   # saute (copie, mise à jour, volume externe en exFAT), le raccourci marche quand même.
   rm -rf "$1/Derush Studio.command" "$1/NMA Extractor.command" "$1/NMA Extractor.app" 2>/dev/null   # anciens raccourcis
-  # une vraie application (comme NMA Auditor et NMA Editor) : elle ouvre le lanceur dans le Terminal, avec le logo
-  local S; S=$(mktemp); printf 'do shell script "open -a Terminal " & quoted form of "%s/Lancer Derush Studio.command"\n' "$APP" > "$S"
+  # une vraie application (comme NMA Auditor et NMA Editor) : elle lance le serveur en arrière-plan, avec le logo
+  local S; S=$(mktemp); printf 'do shell script "/bin/bash " & quoted form of "%s/Lancer Derush Studio.command" & " >/dev/null 2>&1 &"\n' "$APP" > "$S"
   if osacompile -o "$1/NMA Extractor.app" "$S" >/dev/null 2>&1; then rm -f "$S"
     if [ -f "$APP/public/icone/Derush-Studio.icns" ]; then cp "$APP/public/icone/Derush-Studio.icns" "$1/NMA Extractor.app/Contents/Resources/applet.icns" 2>/dev/null && codesign --force --sign - "$1/NMA Extractor.app" >/dev/null 2>&1; touch "$1/NMA Extractor.app"; fi
     return 0; fi; rm -f "$S"
@@ -716,8 +719,8 @@ else
 fi
 cat <<'FIN2'
 
-  Pour l'arrêter, ferme la fenêtre du Terminal
-  qui s'ouvre en même temps.
+  Elle tourne en arrière-plan, comme NMA Auditor et NMA Editor :
+  aucune fenêtre à garder ouverte.
 
 FIN2
 # L'ancienne installation n'est supprimee qu'ICI : tout a reussi, la neuve existe.
