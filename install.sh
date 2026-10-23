@@ -513,10 +513,16 @@ if [ "$MODE" = "local" ]; then
   # « [ -f ] && cp » laissait passer six fichiers sur huit sans un mot : l'application
   # s'installait amputee de sa transcription ou de ses zooms, et l'annoncait « installee ».
   MANQUE=""
-  for f in server.mjs detect.mjs timeline_xml.mjs \
+  # Les fichiers indispensables doivent être là…
+  for f in server.mjs detect.mjs timeline_xml.mjs apprentissage.mjs mise-a-niveau.mjs \
            ctas.py reels_ai.py transcribe_full.py waveform.py zooms.py; do
-    if [ -f "$SRC/$f" ]; then cp "$SRC/$f" "$APP/" || MANQUE="$MANQUE $f"
-    else MANQUE="$MANQUE $f"; fi
+    [ -f "$SRC/$f" ] || MANQUE="$MANQUE $f"
+  done
+  # …puis on copie TOUT le code du dossier (*.mjs, *.py, install.sh). Une liste figée oubliait
+  # les fichiers ajoutés depuis (apprentissage.mjs, mise-a-niveau.mjs…) : le serveur, qui les
+  # importe au démarrage, ne se lançait plus.
+  for f in "$SRC"/*.mjs "$SRC"/*.py "$SRC/install.sh"; do
+    [ -f "$f" ] && { cp "$f" "$APP/" || MANQUE="$MANQUE $(basename "$f")"; }
   done
   [ -z "$MANQUE" ] || fatal "Le dossier source est incomplet." \
     "Fichiers manquants :$MANQUE — redemande l'archive complète à Tom."
@@ -560,9 +566,8 @@ elif [ -f "$APP/server.mjs" ]; then
     rm -rf "$TMPG"
     fatal "Impossible d'installer la mise à jour." "Le disque est peut-être plein. Rien n'a été modifié."
   fi
-  for f in server.mjs detect.mjs timeline_xml.mjs install.sh \
-           ctas.py reels_ai.py transcribe_full.py waveform.py zooms.py; do
-    [ -f "$TMPG/depot/$f" ] && cp "$TMPG/depot/$f" "$APP/"
+  for f in "$TMPG/depot"/*.mjs "$TMPG/depot"/*.py "$TMPG/depot/install.sh"; do
+    [ -f "$f" ] && cp "$f" "$APP/"
   done
   mkdir -p "$APP/public" "$APP/models"
   cp -R "$TMPG/depot/public/." "$APP/public/" 2>/dev/null
